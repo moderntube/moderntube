@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ModernTube
+Comment=Watch YouTube in a native GTK client
+Exec=moderntube
+Icon=multimedia-video-player
+Terminal=false
+Categories=AudioVideo;Video;Player;GTK;
+Keywords=YouTube;video;live;stream;
+StartupNotify=true
+DBusActivatable=false

@@ -1,0 +1,4 @@
+# GTK, GStreamer and WebKit ship only as .so files, and the musl target links the
+# CRT statically by default, which fails at link. This forces a dynamic CRT.
+[build]
+rustflags = ["-C", "target-feature=-crt-static"]
