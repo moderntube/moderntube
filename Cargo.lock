@@ -1411,7 +1411,7 @@ dependencies = [
 [[package]]
 name = "innertube"
 version = "0.0.0"
-source = "git+https://github.com/moderntube/innertube-rs?rev=948f0ff#948f0ffe71735d7b80aecc7393470bcd27c52d3c"
+source = "git+https://github.com/moderntube/innertube-rs?rev=0a51bda#0a51bda62dd509b54f9f1cdbb38484aa906fabd1"
 dependencies = [
  "base64",
  "bytes",
@@ -1430,7 +1430,7 @@ dependencies = [
 [[package]]
 name = "innertube-js"
 version = "0.0.0"
-source = "git+https://github.com/moderntube/innertube-rs?rev=948f0ff#948f0ffe71735d7b80aecc7393470bcd27c52d3c"
+source = "git+https://github.com/moderntube/innertube-rs?rev=0a51bda#0a51bda62dd509b54f9f1cdbb38484aa906fabd1"
 dependencies = [
  "oxc_allocator",
  "oxc_ast",
@@ -1446,7 +1446,7 @@ dependencies = [
 [[package]]
 name = "innertube-pot"
 version = "0.0.0"
-source = "git+https://github.com/moderntube/innertube-rs?rev=948f0ff#948f0ffe71735d7b80aecc7393470bcd27c52d3c"
+source = "git+https://github.com/moderntube/innertube-rs?rev=0a51bda#0a51bda62dd509b54f9f1cdbb38484aa906fabd1"
 dependencies = [
  "botguard-rs",
  "reqwest",
@@ -1460,7 +1460,7 @@ dependencies = [
 [[package]]
 name = "innertube-sabr"
 version = "0.0.0"
-source = "git+https://github.com/moderntube/innertube-rs?rev=948f0ff#948f0ffe71735d7b80aecc7393470bcd27c52d3c"
+source = "git+https://github.com/moderntube/innertube-rs?rev=0a51bda#0a51bda62dd509b54f9f1cdbb38484aa906fabd1"
 dependencies = [
  "bytes",
  "prost",
