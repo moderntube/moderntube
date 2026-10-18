@@ -81,6 +81,9 @@ pub fn build_css(accent: &str, oled: bool) -> String {
          .mini-ctl { background-color: rgba(0,0,0,0.62); color: #fff; min-width: 30px; min-height: 30px; padding: 4px; border-radius: 999px; } \
          .mini-ctl:hover { background-color: rgba(70,70,70,0.92); } \
          .queue-count { font-size: 0.72em; font-weight: bold; padding-right: 2px; } \
+         .search-filter { padding: 4px 8px; font-weight: normal; } \
+         .search-filter.selected { font-weight: bold; color: @accent_color; } \
+         .search-filters-active > button { color: @accent_color; } \
          .queue-current { background-color: rgba(255,255,255,0.07); border-radius: 6px; } \
          .queue-current .heading { color: @accent_color; } \
          .queue-card { border-radius: 12px; } \
