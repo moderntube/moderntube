@@ -30,21 +30,18 @@ pub(super) fn stt_concurrency(providers: &[SttProvider]) -> usize {
     providers.first().map_or(1, |p| p.concurrency)
 }
 
-/// Resolve each provider's key through `env`, dropping keyless providers. `fields`
-/// defaults to `response_format=verbose_json`.
+/// Resolve each provider's key through `key_for` (by provider name), dropping keyless
+/// providers. `fields` defaults to `response_format=verbose_json`.
 pub(super) fn parse_stt_providers(
     cfg: &[SttProviderConfig],
-    env: impl Fn(&str) -> Option<String>,
+    key_for: impl Fn(&str) -> Option<String>,
 ) -> Vec<SttProvider> {
     cfg.iter()
         .filter_map(|p| {
             if p.url.is_empty() {
                 return None;
             }
-            let key = Some(p.api_key.clone())
-                .filter(|s| !s.is_empty())
-                .or_else(|| (!p.api_key_env.is_empty()).then(|| env(&p.api_key_env)).flatten())
-                .filter(|s| !s.is_empty())?;
+            let key = key_for(&p.name).filter(|s| !s.is_empty())?;
             let fields: Vec<(String, String)> = match &p.fields {
                 Some(m) => m.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
                 None => vec![("response_format".into(), "verbose_json".into())],
@@ -68,8 +65,15 @@ pub(super) fn parse_stt_providers(
 }
 
 /// The configured chain, keeping only providers with a resolvable key.
-pub(super) fn stt_providers() -> Vec<SttProvider> {
-    crate::settings::read(|s| parse_stt_providers(&s.catchup.stt, |k| std::env::var(k).ok()))
+pub(super) async fn stt_providers() -> Vec<SttProvider> {
+    let cfg = crate::settings::read(|s| s.catchup.stt.clone());
+    let mut keys = std::collections::HashMap::new();
+    for p in &cfg {
+        if let Some(k) = crate::api_keys::load(&crate::api_keys::stt_slot(&p.name)).await {
+            keys.insert(p.name.clone(), k);
+        }
+    }
+    parse_stt_providers(&cfg, |name| keys.get(name).cloned())
 }
 
 /// One transcription POST. Returns `(status, retry_after_secs, body)`.
@@ -135,7 +139,7 @@ pub(super) async fn transcribe(
     progress: &async_channel::Sender<CatchupPhase>,
 ) -> Result<Vec<CatchupSegment>, String> {
     const MAX_RETRIES: u32 = 5;
-    let providers = stt_providers();
+    let providers = stt_providers().await;
     if providers.is_empty() {
         return Err(NO_STT.to_string());
     }

@@ -7,15 +7,15 @@ pub struct SummarizerConfig {
     pub model: String,
     /// Base URLs tried in order until one answers.
     pub bases: Vec<String>,
-    /// Name of the env var holding the API key.
-    pub key_env: String,
+    /// Keyring slot of the API key; no stored key means a keyless endpoint.
+    pub key_slot: String,
     /// A second provider, tried with its own key and model when every base above fails.
     pub fallback: Option<Box<SummarizerConfig>>,
 }
 
 impl SummarizerConfig {
     /// Split the comma-separated `api_base` setting into the ordered base list.
-    pub fn from_parts(model: &str, base: &str, key_env: &str) -> Self {
+    pub fn from_parts(model: &str, base: &str, key_slot: &str) -> Self {
         SummarizerConfig {
             model: model.to_string(),
             bases: base
@@ -23,7 +23,7 @@ impl SummarizerConfig {
                 .map(|b| b.trim().trim_end_matches('/').to_string())
                 .filter(|b| !b.is_empty())
                 .collect(),
-            key_env: key_env.to_string(),
+            key_slot: key_slot.to_string(),
             fallback: None,
         }
     }
@@ -35,8 +35,9 @@ impl SummarizerConfig {
 
     /// The configured summarizer and its fallback. An endpoint with no base URL is off.
     pub fn from_settings(c: &crate::settings::Catchup) -> Self {
-        let part = |e: &crate::settings::Endpoint| Self::from_parts(&e.model, &e.api_base, &e.api_key_env);
-        let (primary, fallback) = (part(&c.summarizer), part(&c.fallback));
+        let part = |e: &crate::settings::Endpoint, slot| Self::from_parts(&e.model, &e.api_base, slot);
+        let (primary, fallback) =
+            (part(&c.summarizer, crate::api_keys::SUMMARIZER), part(&c.fallback, crate::api_keys::FALLBACK));
         if fallback.bases.is_empty() {
             primary
         } else {
@@ -103,10 +104,7 @@ pub(crate) async fn chat_complete(cfg: &SummarizerConfig, messages: serde_json::
 }
 
 pub(super) async fn complete_once(cfg: &SummarizerConfig, messages: &serde_json::Value) -> Result<String, String> {
-    let key = match cfg.key_env.as_str() {
-        "" => None,
-        var => Some(std::env::var(var).map_err(|_| format!("{var} not set (Preferences → Catch me up)"))?),
-    };
+    let key = crate::api_keys::load(&cfg.key_slot).await;
     let body = serde_json::json!({ "model": cfg.model, "messages": messages });
     let client = reqwest::Client::new();
     let mut failures = Vec::new();
