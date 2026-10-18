@@ -178,7 +178,7 @@ pub fn build(application: &adw::Application, rt: AsyncRuntime) -> ApplicationWin
 
     let _ = app.window.set(window.clone());
 
-    preferences::wire_preferences(application, &window);
+    preferences::wire_preferences(application, &window, app.rt.clone());
     app.header.pack_end(&preferences::primary_menu());
     auth::wire_session(&app, &window);
     probes::wire_probes(&app, &window);

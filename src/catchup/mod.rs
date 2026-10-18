@@ -293,7 +293,7 @@ pub async fn transcribe_window(
         drop(tx);
         // Transcribe in completion order, overlapped with the ongoing fetches, at the
         // head provider's concurrency (Groq throttles parallel uploads; NVIDIA does not).
-        let stt_sem = std::sync::Arc::new(tokio::sync::Semaphore::new(stt_concurrency(&stt_providers())));
+        let stt_sem = std::sync::Arc::new(tokio::sync::Semaphore::new(stt_concurrency(&stt_providers().await)));
         let mut jobs: tokio::task::JoinSet<TranscribedChunk> = tokio::task::JoinSet::new();
         let mut t_first_dispatch: Option<std::time::Instant> = None;
         let mut done_chunks = 0usize;
@@ -559,22 +559,24 @@ mod tests {
 
     #[test]
     fn stt_providers_use_their_own_keys_and_a_keyless_one_is_skipped() {
-        let env = |k: &str| (k == "STT_KEY").then(|| "env-secret".to_string());
+        let key_for = |name: &str| match name {
+            "a" => Some("key-a".to_string()),
+            "b" => Some("key-b".to_string()),
+            _ => None,
+        };
         let cfg = [
             crate::settings::SttProviderConfig {
-                api_key: "lit".into(),
-                fields: Some([("response_format".to_string(), "verbose_json".to_string())].into()),
-                ..provider("inline", "https://api.example.com/a")
+                fields: Some([("timestamp_granularities".to_string(), "segment".to_string())].into()),
+                ..provider("a", "https://api.example.com/a")
             },
-            crate::settings::SttProviderConfig { api_key_env: "STT_KEY".into(), ..provider("fromenv", "https://api.example.com/b") },
-            crate::settings::SttProviderConfig { api_key_env: "UNSET_KEY".into(), ..provider("nokey", "https://api.example.com/c") },
+            provider("b", "https://api.example.com/b"),
+            provider("nokey", "https://api.example.com/c"),
         ];
-        let ps = parse_stt_providers(&cfg, env);
+        let ps = parse_stt_providers(&cfg, key_for);
         assert_eq!(ps.len(), 2, "keyless provider dropped");
-        assert_eq!(ps[0].name, "inline");
-        assert_eq!(ps[0].key, "lit");
-        assert_eq!(ps[1].name, "fromenv");
-        assert_eq!(ps[1].key, "env-secret");
+        assert_eq!((ps[0].name.as_str(), ps[0].key.as_str()), ("a", "key-a"));
+        assert_eq!(ps[0].fields, vec![("timestamp_granularities".to_string(), "segment".to_string())]);
+        assert_eq!((ps[1].name.as_str(), ps[1].key.as_str()), ("b", "key-b"));
         assert_eq!(ps[1].fields, vec![("response_format".to_string(), "verbose_json".to_string())]);
     }
 
@@ -583,14 +585,13 @@ mod tests {
         let cfg = [
             crate::settings::SttProviderConfig {
                 kind: "riva".into(),
-                api_key: "k".into(),
                 function_id: "fid".into(),
                 concurrency: Some(8),
                 ..provider("riva", "https://api.example.com")
             },
-            crate::settings::SttProviderConfig { api_key: "k".into(), ..provider("multipart", "https://api.example.com/x") },
+            provider("multipart", "https://api.example.com/x"),
         ];
-        let ps = parse_stt_providers(&cfg, |_| None);
+        let ps = parse_stt_providers(&cfg, |_| Some("k".to_string()));
         assert_eq!(ps[0].kind, SttKind::Riva { function_id: "fid".into() });
         assert_eq!(ps[1].kind, SttKind::OpenAi);
         assert_eq!(stt_concurrency(&ps), 8, "the primary provider sets the transcription fan-out");
@@ -608,7 +609,7 @@ mod tests {
             .collect();
         files.sort();
         let (tx, _rx) = async_channel::unbounded();
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(stt_concurrency(&stt_providers())));
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(stt_concurrency(&stt_providers().await)));
         let t0 = std::time::Instant::now();
         let mut jobs = tokio::task::JoinSet::new();
         for f in files.clone() {

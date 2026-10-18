@@ -43,17 +43,16 @@ pub struct Catchup {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-/// An OpenAI-compatible chat endpoint.
+/// An OpenAI-compatible chat endpoint. Its API key is in the keyring ([`crate::api_keys`]).
 pub struct Endpoint {
     pub model: String,
     /// Base URLs including `/v1`, comma-separated, tried in order.
     pub api_base: String,
-    /// Name of the environment variable that holds the API key; empty for a keyless endpoint.
-    pub api_key_env: String,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
+/// A transcription provider. Its API key is in the keyring under [`crate::api_keys::stt_slot`].
 pub struct SttProviderConfig {
     pub name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -62,11 +61,6 @@ pub struct SttProviderConfig {
     pub url: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub model: String,
-    /// The key itself. `api_key_env` keeps it out of this file.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub api_key: String,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub api_key_env: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub function_id: String,
     /// Extra multipart form fields; absent means `response_format = "verbose_json"`.
@@ -149,8 +143,7 @@ impl Settings {
     fn from_legacy_files(dir: &Path) -> Self {
         let read = |f: &str| std::fs::read_to_string(dir.join(f)).map(|s| s.trim().to_string()).unwrap_or_default();
         let mut s = Self::default();
-        s.catchup.summarizer =
-            Endpoint { model: read("catchup_model"), api_base: read("catchup_api_base"), api_key_env: read("catchup_api_key_env") };
+        s.catchup.summarizer = Endpoint { model: read("catchup_model"), api_base: read("catchup_api_base") };
         if let Ok(json) = std::fs::read_to_string(dir.join("stt_providers.json")) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json) {
                 s.catchup.stt = serde_json::from_value(v["providers"].clone()).unwrap_or_default();
@@ -223,7 +216,6 @@ mod tests {
         let s = Settings::load_in(&d);
         assert_eq!(s.catchup.summarizer.model, "some-model");
         assert_eq!(s.catchup.summarizer.api_base, "http://localhost:8080/v1");
-        assert_eq!(s.catchup.summarizer.api_key_env, "");
         assert_eq!(s.catchup.stt.len(), 2);
         assert_eq!(s.catchup.stt[1].function_id, "fid");
         assert_eq!(s.catchup.stt[1].concurrency, Some(8));
