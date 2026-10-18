@@ -77,3 +77,5 @@ rendering are checked by driving the app (see above).
   `moderntube::diag::*` at `debug`, for example
   `RUST_LOG=info,moderntube::diag::fps=debug`.
 - Conventional commits, one kind of change per commit.
+- Commit messages, code and comments carry no personal or private information: no names,
+  email addresses, usernames, hostnames, local paths or account details.
