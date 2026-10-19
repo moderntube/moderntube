@@ -11,6 +11,7 @@ use adw::Toast;
 use innertube::Session;
 use crate::models::ResultItem;
 use crate::runtime::{AsyncRuntime, Generation};
+use crate::widgets::SearchFilters;
 
 use super::app::App;
 use super::{FeedKind, PlayerMode, YOUTUBE_HOME};
@@ -140,20 +141,28 @@ impl App {
     // `run_search` runs a query for Enter, autocomplete rows and the `/` shortcut, and shows
     // the results page.
     pub(super) fn run_search(self: &Rc<Self>, query: String) {
+        self.run_filtered_search(query, None);
+    }
+
+    /// Runs `query` with a search filter's `params` (IT-029), as the `sp` of the page URL.
+    pub(super) fn run_filtered_search(self: &Rc<Self>, query: String, params: Option<String>) {
         let app = self;
         let App {
-            rt, session, toasts, search_gen, search_continuation, loading_more, feed_kind, stack,
-            last_page, player_mode, results_url, ..
+            rt, session, toasts, search_gen, search_continuation, search_query, loading_more, feed_kind,
+            stack, last_page, player_mode, results_url, ..
         } = &**self;
         let results = self.results();
         if query.trim().is_empty() {
             return;
         }
-        if let Ok(url) =
-            reqwest::Url::parse_with_params("https://www.youtube.com/results", [("search_query", &query)])
-        {
+        let mut url_params = vec![("search_query", query.as_str())];
+        url_params.extend(params.as_deref().map(|p| ("sp", p)));
+        if let Ok(url) = reqwest::Url::parse_with_params("https://www.youtube.com/results", url_params) {
             *results_url.borrow_mut() = url.into();
         }
+        *search_query.borrow_mut() = query.clone();
+        let filters = self.search_filters.get().cloned();
+        let filtered = params.is_some();
         // Searching while watching full-screen drops the video to the corner PiP so the
         // results are not hidden behind it.
         if player_mode.get() == PlayerMode::Full {
@@ -174,10 +183,10 @@ impl App {
         // Show the spinner so a slow fetch does not read as nothing happening.
         results.set_empty_text(&format!("No results for “{query}”."));
         results.set_loading(true);
-        tracing::info!("[search] start: {query:?}");
+        tracing::info!("[search] start: {query:?} params={params:?}");
         let t0 = std::time::Instant::now();
         rt.spawn(
-            async move { current.search(&query, None).await },
+            async move { current.search(&query, params.as_deref()).await },
             move |res| {
                 if !generation.is_current(token) {
                     return;
@@ -185,6 +194,9 @@ impl App {
                 match res {
                     Ok(found) => {
                         *search_continuation.borrow_mut() = found.continuation.clone();
+                        if let Some(filters) = &filters {
+                            filters.set_groups(&found.filters, filtered);
+                        }
                         let items: Vec<ResultItem> =
                             found.items.iter().filter_map(ResultItem::from_search_item).collect();
                         tracing::info!(
@@ -214,6 +226,9 @@ impl App {
         let results = self.results();
         let token = search_gen.bump();
         feed_kind.set(kind);
+        if let Some(filters) = self.search_filters.get() {
+            filters.set_groups(&[], false);
+        }
         *results_url.borrow_mut() = match kind {
             FeedKind::Subscriptions => "https://www.youtube.com/feed/subscriptions".into(),
             _ => YOUTUBE_HOME.into(),
@@ -279,6 +294,18 @@ pub(super) fn wire_search_boxes(app: &Rc<App>, player_search: &SearchEntry) {
     };
     wire_search(search, run_search.clone(), session.clone(), rt.clone());
     wire_search(player_search, run_search.clone(), session.clone(), rt.clone());
+
+    let filters = Rc::new(SearchFilters::new({
+        let app = Rc::downgrade(app);
+        Rc::new(move |params: Option<String>| {
+            if let Some(app) = app.upgrade() {
+                let query = app.search_query.borrow().clone();
+                app.run_filtered_search(query, params);
+            }
+        })
+    }));
+    app.header.pack_end(&filters.button);
+    let _ = app.search_filters.set(filters);
 
     // Infinite scroll: near the bottom, fetch the next search page and append it.
     {
