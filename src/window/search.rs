@@ -11,7 +11,7 @@ use adw::Toast;
 use innertube::Session;
 use crate::models::ResultItem;
 use crate::runtime::{AsyncRuntime, Generation};
-use crate::widgets::SearchFilters;
+use crate::widgets::{SearchChips, SearchFilters};
 
 use super::app::App;
 use super::{FeedKind, PlayerMode, YOUTUBE_HOME};
@@ -137,6 +137,21 @@ pub(super) fn wire_search(
     });
 }
 
+/// Which request loads a first search page.
+enum SearchPage {
+    Filtered(Option<String>),
+    Chip(String),
+}
+
+impl std::fmt::Debug for SearchPage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Filtered(params) => write!(f, "params={params:?}"),
+            Self::Chip(_) => f.write_str("chip"),
+        }
+    }
+}
+
 impl App {
     // `run_search` runs a query for Enter, autocomplete rows and the `/` shortcut, and shows
     // the results page.
@@ -146,23 +161,35 @@ impl App {
 
     /// Runs `query` with a search filter's `params` (IT-029), as the `sp` of the page URL.
     pub(super) fn run_filtered_search(self: &Rc<Self>, query: String, params: Option<String>) {
-        let app = self;
-        let App {
-            rt, session, toasts, search_gen, search_continuation, search_query, loading_more, feed_kind,
-            stack, last_page, player_mode, results_url, ..
-        } = &**self;
-        let results = self.results();
         if query.trim().is_empty() {
             return;
         }
         let mut url_params = vec![("search_query", query.as_str())];
         url_params.extend(params.as_deref().map(|p| ("sp", p)));
         if let Ok(url) = reqwest::Url::parse_with_params("https://www.youtube.com/results", url_params) {
-            *results_url.borrow_mut() = url.into();
+            *self.results_url.borrow_mut() = url.into();
         }
-        *search_query.borrow_mut() = query.clone();
-        let filters = self.search_filters.get().cloned();
+        *self.search_query.borrow_mut() = query.clone();
         let filtered = params.is_some();
+        self.load_search_page(query, SearchPage::Filtered(params), filtered);
+    }
+
+    /// Loads the page behind a search chip's token (IT-030) for the query on the results page.
+    pub(super) fn run_chip(self: &Rc<Self>, token: String) {
+        let query = self.search_query.borrow().clone();
+        let filtered = self.search_filters.get().is_some_and(|f| f.filtered());
+        self.load_search_page(query, SearchPage::Chip(token), filtered);
+    }
+
+    fn load_search_page(self: &Rc<Self>, query: String, page: SearchPage, filtered: bool) {
+        let app = self;
+        let App {
+            rt, session, toasts, search_gen, search_continuation, loading_more, feed_kind, stack,
+            last_page, player_mode, ..
+        } = &**self;
+        let results = self.results();
+        let filters = self.search_filters.get().cloned();
+        let chips = self.search_chips.get().cloned();
         // Searching while watching full-screen drops the video to the corner PiP so the
         // results are not hidden behind it.
         if player_mode.get() == PlayerMode::Full {
@@ -183,10 +210,15 @@ impl App {
         // Show the spinner so a slow fetch does not read as nothing happening.
         results.set_empty_text(&format!("No results for “{query}”."));
         results.set_loading(true);
-        tracing::info!("[search] start: {query:?} params={params:?}");
+        tracing::info!("[search] start: {query:?} {page:?}");
         let t0 = std::time::Instant::now();
         rt.spawn(
-            async move { current.search(&query, params.as_deref()).await },
+            async move {
+                match page {
+                    SearchPage::Filtered(params) => current.search(&query, params.as_deref()).await,
+                    SearchPage::Chip(token) => current.search_continuation(&token).await,
+                }
+            },
             move |res| {
                 if !generation.is_current(token) {
                     return;
@@ -196,6 +228,9 @@ impl App {
                         *search_continuation.borrow_mut() = found.continuation.clone();
                         if let Some(filters) = &filters {
                             filters.set_groups(&found.filters, filtered);
+                        }
+                        if let Some(chips) = &chips {
+                            chips.set_chips(&found.chips);
                         }
                         let items: Vec<ResultItem> =
                             found.items.iter().filter_map(ResultItem::from_search_item).collect();
@@ -208,6 +243,9 @@ impl App {
                     }
                     Err(e) => {
                         tracing::warn!("[search] error after {:.1}s: {e}", t0.elapsed().as_secs_f64());
+                        if let Some(chips) = &chips {
+                            chips.restore();
+                        }
                         results.set_loading(false);
                         toasts.add_toast(Toast::new(&format!("Search failed: {e}")));
                     }
@@ -228,6 +266,9 @@ impl App {
         feed_kind.set(kind);
         if let Some(filters) = self.search_filters.get() {
             filters.set_groups(&[], false);
+        }
+        if let Some(chips) = self.search_chips.get() {
+            chips.set_chips(&[]);
         }
         *results_url.borrow_mut() = match kind {
             FeedKind::Subscriptions => "https://www.youtube.com/feed/subscriptions".into(),
@@ -306,6 +347,17 @@ pub(super) fn wire_search_boxes(app: &Rc<App>, player_search: &SearchEntry) {
     }));
     app.header.pack_end(&filters.button);
     let _ = app.search_filters.set(filters);
+
+    let chips = Rc::new(SearchChips::new({
+        let app = Rc::downgrade(app);
+        Rc::new(move |token: String| {
+            if let Some(app) = app.upgrade() {
+                app.run_chip(token);
+            }
+        })
+    }));
+    app.results_box.insert_child_after(&chips.root, Some(&app.header));
+    let _ = app.search_chips.set(chips);
 
     // Infinite scroll: near the bottom, fetch the next search page and append it.
     {

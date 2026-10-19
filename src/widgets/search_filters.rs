@@ -33,6 +33,11 @@ impl SearchFilters {
         Self { button, popover, columns, on_pick }
     }
 
+    /// Whether the shown results ran with filter params.
+    pub fn filtered(&self) -> bool {
+        self.button.has_css_class("search-filters-active")
+    }
+
     /// Rebuilds the popover from a first search page's dialog; an empty dialog hides the button.
     /// `filtered` marks the button for a search that ran with filter params.
     pub fn set_groups(&self, groups: &[SearchFilterGroup], filtered: bool) {

@@ -17,7 +17,7 @@ use crate::playback::{initial_quality, player, Player, Queue};
 use crate::runtime::{AsyncRuntime, Generation};
 use crate::widgets::{
     ChannelView, ChatMode, CommentsView, HoverPreview, LiveChatView, PlayerView, PlaylistView, ResultsView,
-    SearchFilters, ShortsView, WatchInfo,
+    SearchChips, SearchFilters, ShortsView, WatchInfo,
 };
 
 use super::{FeedKind, PlayerMode, YOUTUBE_HOME};
@@ -55,6 +55,7 @@ pub(super) struct App {
     /// The query on the results page, which a picked search filter runs again.
     pub search_query: Rc<RefCell<String>>,
     pub search_filters: OnceCell<Rc<SearchFilters>>,
+    pub search_chips: OnceCell<Rc<SearchChips>>,
     pub loading_more: Rc<Cell<bool>>,
     pub feed_kind: Rc<Cell<FeedKind>>,
     pub results_box: GtkBox,
@@ -320,6 +321,7 @@ impl App {
             search_continuation,
             search_query: Rc::default(),
             search_filters: OnceCell::new(),
+            search_chips: OnceCell::new(),
             loading_more,
             feed_kind,
             results_box,
