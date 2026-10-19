@@ -297,10 +297,10 @@ pub(super) fn wire_search_boxes(app: &Rc<App>, player_search: &SearchEntry) {
 
     let filters = Rc::new(SearchFilters::new({
         let app = Rc::downgrade(app);
-        Rc::new(move |params: String| {
+        Rc::new(move |params: Option<String>| {
             if let Some(app) = app.upgrade() {
                 let query = app.search_query.borrow().clone();
-                app.run_filtered_search(query, Some(params));
+                app.run_filtered_search(query, params);
             }
         })
     }));
