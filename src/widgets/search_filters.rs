@@ -12,12 +12,12 @@ pub struct SearchFilters {
     pub button: MenuButton,
     popover: Popover,
     columns: GtkBox,
-    on_pick: Rc<dyn Fn(String)>,
+    on_pick: Rc<dyn Fn(Option<String>)>,
 }
 
 impl SearchFilters {
     /// `on_pick(params)` searches the current query again with a picked option's `params`.
-    pub fn new(on_pick: Rc<dyn Fn(String)>) -> Self {
+    pub fn new(on_pick: Rc<dyn Fn(Option<String>)>) -> Self {
         let columns = GtkBox::new(Orientation::Horizontal, 24);
         columns.set_margin_start(12);
         columns.set_margin_end(12);
@@ -54,17 +54,16 @@ impl SearchFilters {
                 let option = Button::builder().child(&label).css_classes(["flat", "search-filter"]).build();
                 if filter.selected {
                     option.add_css_class("selected");
-                    option.set_tooltip_text(filter.params.is_some().then_some("Remove filter"));
                 }
-                match filter.params.clone() {
-                    Some(params) => {
-                        let (popover, on_pick) = (self.popover.clone(), self.on_pick.clone());
-                        option.connect_clicked(move |_| {
-                            popover.popdown();
-                            on_pick(params.clone());
-                        });
-                    }
-                    None => option.set_can_target(false),
+                option.set_tooltip_text(filter.tooltip.as_deref());
+                if filter.clickable {
+                    let (popover, on_pick, params) = (self.popover.clone(), self.on_pick.clone(), filter.params.clone());
+                    option.connect_clicked(move |_| {
+                        popover.popdown();
+                        on_pick(params.clone());
+                    });
+                } else {
+                    option.set_can_target(false);
                 }
                 option.set_sensitive(!filter.disabled);
                 column.append(&option);
