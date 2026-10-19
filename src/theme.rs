@@ -84,6 +84,8 @@ pub fn build_css(accent: &str, oled: bool) -> String {
          .search-filter { padding: 4px 8px; font-weight: normal; } \
          .search-filter.selected { font-weight: bold; color: @accent_color; } \
          .search-filters-active > button { color: @accent_color; } \
+         .search-chip { border-radius: 8px; padding: 4px 12px; min-height: 0; font-weight: 500; background-color: alpha(@window_fg_color, 0.1); } \
+         .search-chip:checked { background-color: @window_fg_color; color: @window_bg_color; } \
          .queue-current { background-color: rgba(255,255,255,0.07); border-radius: 6px; } \
          .queue-current .heading { color: @accent_color; } \
          .queue-card { border-radius: 12px; } \
