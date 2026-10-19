@@ -25,9 +25,8 @@ pub(super) fn wire_search(
     session: Rc<RefCell<Arc<Session>>>,
     rt: AsyncRuntime,
 ) {
-    // The text last set by an autocomplete pick. `search_changed` skips suggestions while the
-    // box holds exactly this: SearchEntry's debounced signal can fire more than once, so a
-    // one-shot flag would not hold.
+    // The text last searched by Enter or an autocomplete pick; `search_changed` skips suggestions
+    // while the box holds it. SearchEntry's 150 ms debounce outlives `activate`.
     let suggest_last_set = Rc::new(RefCell::new(String::new()));
     let suggest_pop =
         Popover::builder().autohide(false).has_arrow(false).position(PositionType::Bottom).build();
@@ -51,10 +50,13 @@ pub(super) fn wire_search(
         let run_search = run_search.clone();
         let pop = suggest_pop.clone();
         let suggest_gen = suggest_gen.clone();
+        let last_set = suggest_last_set.clone();
         search.connect_activate(move |entry| {
+            let q = entry.text().to_string();
             suggest_gen.bump(); // supersede any in-flight suggestion
+            *last_set.borrow_mut() = q.clone();
             pop.popdown();
-            run_search(entry.text().to_string());
+            run_search(q);
         });
     }
     // Row click → fill + search (suppress the resulting set_text from re-opening the popover).
@@ -91,7 +93,6 @@ pub(super) fn wire_search(
     let last_set = suggest_last_set.clone();
     search.connect_search_changed(move |entry| {
         let q = entry.text().to_string();
-        // Skip while the box holds the text set by an autocomplete pick.
         if q == *last_set.borrow() {
             suggest_pop.popdown();
             return;
