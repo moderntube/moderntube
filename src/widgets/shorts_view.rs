@@ -558,7 +558,16 @@ impl ShortsView {
             // A wheel notch is 1.0; a touchpad sends many small deltas, summed to one swipe.
             let scroll = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
             let w = weak();
-            scroll.connect_scroll(move |_, _, dy| {
+            scroll.connect_scroll(move |c, _, dy| {
+                // GTK propagates a touchpad's stop event past every handler, so the end of a
+                // comments scroll arrives here too; it ends a scroll and never starts a swipe.
+                let is_stop = c
+                    .current_event()
+                    .and_then(|e| e.downcast::<gtk::gdk::ScrollEvent>().ok())
+                    .is_some_and(|e| e.is_stop());
+                if is_stop {
+                    return glib::Propagation::Proceed;
+                }
                 let Some(i) = w.upgrade() else { return glib::Propagation::Proceed };
                 let acc = i.scroll_acc.get() + dy;
                 if acc.abs() >= 1.0 {
