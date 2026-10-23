@@ -11,10 +11,10 @@ use adw::prelude::*;
 use adw::{Toast, ToastOverlay};
 use gtk4 as gtk;
 use gtk::{
-    glib, Align, AspectFrame, Box as GtkBox, Button, Image, Label, Orientation, Overlay, Picture, ProgressBar, Revealer,
+    glib, Align, AspectFrame, Box as GtkBox, Button, Image, Label, Orientation, Overlay, Picture, Revealer, Scale,
     Spinner, Stack, StackTransitionType, ToggleButton,
 };
-use innertube::{ReelEntry, SegmentVod};
+use innertube::{ReelEntry, SegmentVod, Storyboard};
 
 use crate::playback::{Player, Prepared};
 use crate::runtime::AsyncRuntime;
@@ -23,6 +23,8 @@ use crate::runtime::AsyncRuntime;
 const SLIDE_MS: u32 = 260;
 /// Vertical drag distance that counts as a swipe.
 const DRAG_SWIPE_PX: f64 = 60.0;
+/// How long a press on the video must last to play at 2× instead of pausing on release.
+const HOLD_2X_MS: u64 = 300;
 
 pub struct ShortsView {
     pub root: Overlay,
@@ -41,7 +43,8 @@ struct Ui {
     title: Label,
     channel: Label,
     status: Label,
-    progress: ProgressBar,
+    seek: Scale,
+    speed_badge: Revealer,
     like_button: ToggleButton,
     like_count: Label,
     comments_button: ToggleButton,
@@ -75,6 +78,13 @@ struct Inner {
     frame_shown: Cell<bool>,
     hovered: Cell<bool>,
     volume_before_mute: Cell<f64>,
+    /// The speed to restore when a 2× hold ends; `Some` while the hold lasts.
+    speed_before_hold: Cell<Option<f64>>,
+    /// The Short on screen's seek-preview storyboard and duration, read by the scrub preview.
+    storyboard: Rc<RefCell<Option<Storyboard>>>,
+    duration: Rc<Cell<f64>>,
+    /// When the user last moved the seek bar; the tick leaves it alone for a moment after.
+    last_seek: Rc<Cell<Option<Instant>>>,
     comments: Rc<super::CommentsView>,
     /// The Short on screen's comments panel token, and the next page's.
     comments_token: RefCell<Option<String>>,
@@ -177,11 +187,30 @@ impl ShortsView {
         meta.append(&status);
         card.add_overlay(&meta);
 
-        let progress = ProgressBar::new();
-        progress.add_css_class("shorts-progress");
-        progress.set_valign(Align::End);
-        progress.set_can_target(false);
-        card.add_overlay(&progress);
+        let seek = Scale::with_range(Orientation::Horizontal, 0.0, 1.0, 1.0);
+        seek.add_css_class("shorts-seek");
+        seek.set_draw_value(false);
+        seek.set_valign(Align::End);
+        seek.set_focus_on_click(false);
+        card.add_overlay(&seek);
+        let storyboard: Rc<RefCell<Option<Storyboard>>> = Rc::new(RefCell::new(None));
+        let duration = Rc::new(Cell::new(0.0f64));
+        let scrub_preview =
+            super::player_controls::build_scrub_preview(&player, rt.clone(), &seek, &storyboard, &duration);
+        card.add_overlay(&scrub_preview);
+
+        let speed_label = Label::new(Some("2×"));
+        speed_label.add_css_class("speed-badge");
+        let speed_badge = Revealer::builder()
+            .transition_type(gtk::RevealerTransitionType::Crossfade)
+            .transition_duration(120)
+            .child(&speed_label)
+            .halign(Align::Center)
+            .valign(Align::Start)
+            .margin_top(16)
+            .can_target(false)
+            .build();
+        card.add_overlay(&speed_badge);
 
         let frame = AspectFrame::new(0.5, 0.5, 9.0 / 16.0, false);
         frame.set_vexpand(true);
@@ -307,7 +336,8 @@ impl ShortsView {
             title,
             channel,
             status,
-            progress,
+            seek: seek.clone(),
+            speed_badge,
             like_button: like_button.clone(),
             like_count,
             comments_button: comments_button.clone(),
@@ -334,6 +364,10 @@ impl ShortsView {
             frame_shown: Cell::new(false),
             hovered: Cell::new(false),
             volume_before_mute: Cell::new(100.0),
+            speed_before_hold: Cell::new(None),
+            storyboard,
+            duration,
+            last_seek: Rc::new(Cell::new(None)),
             comments,
             comments_token: RefCell::new(None),
             comments_next: RefCell::new(None),
@@ -410,15 +444,69 @@ impl ShortsView {
                 }
             });
         }
-        // Tap the video to pause; drag it up or down to swipe.
+        // One drag is one seek: only the value the bar settles on is sought.
+        {
+            let w = weak();
+            let gen = Rc::new(Cell::new(0u64));
+            seek.connect_change_value(move |_, _, value| {
+                let Some(i) = w.upgrade() else { return glib::Propagation::Proceed };
+                i.last_seek.set(Some(Instant::now()));
+                let g = gen.get().wrapping_add(1);
+                gen.set(g);
+                let (w, gen) = (Rc::downgrade(&i), gen.clone());
+                let settle = Duration::from_millis(super::player_controls::SEEK_SETTLE_MS);
+                glib::timeout_add_local_once(settle, move || {
+                    if let (Some(i), true) = (w.upgrade(), gen.get() == g) {
+                        i.player.seek_absolute(value);
+                    }
+                });
+                glib::Propagation::Proceed
+            });
+        }
+        // Tap the video to pause, hold it to play at 2×; drag it up or down to swipe.
         {
             let tap = gtk::GestureClick::new();
+            tap.set_button(gtk::gdk::BUTTON_PRIMARY);
+            let hold_timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
             let w = weak();
-            tap.connect_released(move |g, n, _, _| {
-                if n == 1 && g.current_button() == gtk::gdk::BUTTON_PRIMARY {
+            let timer = hold_timer.clone();
+            tap.connect_pressed(move |_, n, _, _| {
+                if n != 1 {
+                    return;
+                }
+                if let Some(id) = timer.borrow_mut().take() {
+                    id.remove();
+                }
+                let (w, fired) = (w.clone(), timer.clone());
+                let id = glib::timeout_add_local_once(Duration::from_millis(HOLD_2X_MS), move || {
+                    fired.borrow_mut().take();
                     if let Some(i) = w.upgrade() {
+                        i.hold_2x(true);
+                    }
+                });
+                *timer.borrow_mut() = Some(id);
+            });
+            let w = weak();
+            let timer = hold_timer.clone();
+            tap.connect_released(move |_, n, _, _| {
+                let pending = timer.borrow_mut().take();
+                let Some(i) = w.upgrade() else { return };
+                if let Some(id) = pending {
+                    id.remove();
+                    if n == 1 {
                         i.toggle_pause();
                     }
+                } else {
+                    i.hold_2x(false);
+                }
+            });
+            let w = weak();
+            tap.connect_cancel(move |_, _| {
+                if let Some(id) = hold_timer.borrow_mut().take() {
+                    id.remove();
+                }
+                if let Some(i) = w.upgrade() {
+                    i.hold_2x(false);
                 }
             });
             card.add_controller(tap);
@@ -583,6 +671,11 @@ impl ShortsView {
         self.inner.player.is_paused()
     }
 
+    /// Starts or ends 2× playback, as a held Space does.
+    pub fn hold_2x(&self, on: bool) {
+        self.inner.hold_2x(on);
+    }
+
     /// The next (`1`) or previous (`-1`) Short.
     pub fn step(&self, delta: i32) {
         self.inner.swipe(delta);
@@ -625,7 +718,8 @@ impl Inner {
         self.ui.title.set_text("");
         self.ui.channel.set_text("");
         self.ui.status.set_text("");
-        self.ui.progress.set_fraction(0.0);
+        self.hold_2x(false);
+        self.clear_seek();
     }
 
     fn toggle_pause(&self) {
@@ -663,11 +757,46 @@ impl Inner {
     }
 
     fn tick(&self) {
-        if let (Some(pos), Some(dur)) = (self.player.time_pos_checked(), self.player.duration()) {
-            if dur > 0.0 {
-                self.ui.progress.set_fraction((pos / dur).clamp(0.0, 1.0));
-            }
+        let Some(dur) = self.player.duration().filter(|d| *d > 0.0) else { return };
+        self.duration.set(dur);
+        let seek = &self.ui.seek;
+        if (seek.adjustment().upper() - dur).abs() > 0.05 {
+            seek.set_range(0.0, dur);
         }
+        let user_seeking = self.last_seek.get().is_some_and(|t| t.elapsed() < Duration::from_millis(400));
+        if let (false, Some(pos)) = (user_seeking, self.player.time_pos_checked()) {
+            seek.set_value(pos.clamp(0.0, dur));
+        }
+    }
+
+    /// Starts or ends 2× playback for a held press or Space; a paused Short resumes for it.
+    fn hold_2x(&self, on: bool) {
+        if on {
+            if self.speed_before_hold.get().is_some() {
+                return;
+            }
+            self.speed_before_hold.set(Some(self.player.speed()));
+            self.player.set_speed(2.0);
+            if self.player.is_paused() {
+                self.player.set_paused(false);
+            }
+        } else if let Some(speed) = self.speed_before_hold.take() {
+            self.player.set_speed(speed);
+        }
+        self.ui.speed_badge.set_reveal_child(self.speed_before_hold.get().is_some());
+        self.sync_controls();
+    }
+
+    fn load_vod(&self, vod: Arc<SegmentVod>) {
+        self.storyboard.replace(vod.storyboard().cloned());
+        self.player.load(Prepared::Vod(vod));
+    }
+
+    fn clear_seek(&self) {
+        self.storyboard.replace(None);
+        self.duration.set(0.0);
+        self.ui.seek.set_range(0.0, 1.0);
+        self.ui.seek.set_value(0.0);
     }
 
     /// A swipe from the user: one at a time, never while a slide is still running.
@@ -760,14 +889,14 @@ impl Inner {
         self.ui.title.set_text("");
         self.ui.channel.set_text("");
         self.ui.status.set_text("");
-        self.ui.progress.set_fraction(0.0);
+        self.clear_seek();
         tracing::info!("[shorts] show #{idx} {} uptime {}ms", entry.video_id, crate::uptime_ms());
         let pre = self.preloaded.take();
         match pre {
             Some((id, vod)) if id == entry.video_id => {
                 tracing::info!("[shorts] {id}: continuing the preloaded session");
                 vod.activate();
-                self.player.load(Prepared::Vod(vod));
+                self.load_vod(vod);
             }
             other => {
                 if let Some((_, vod)) = other {
@@ -785,7 +914,7 @@ impl Inner {
                         return;
                     }
                     match res {
-                        Ok(vod) => me.player.load(Prepared::Vod(vod)),
+                        Ok(vod) => me.load_vod(vod),
                         Err(err) => {
                             me.ui.spinner.stop();
                             me.ui.status.set_text(&format!("Could not play this Short: {err}"));

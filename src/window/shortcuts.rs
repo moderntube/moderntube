@@ -23,6 +23,8 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
     let space_2x = Rc::new(Cell::new(false));
     let space_saved_speed = Rc::new(Cell::new(1.0f64));
     let space_gen = Rc::new(Cell::new(0u64));
+    // The press went to the Shorts player, so the release does too.
+    let space_on_shorts = Rc::new(Cell::new(false));
     let typing_in_field: Rc<dyn Fn() -> bool> = {
         let window_f = window.clone();
         Rc::new(move || {
@@ -41,6 +43,7 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
         let space_2x = space_2x.clone();
         let space_saved_speed = space_saved_speed.clone();
         let space_gen = space_gen.clone();
+        let space_on_shorts = space_on_shorts.clone();
         let typing = typing_in_field.clone();
         let search_key = search.clone();
         let player_k = player.clone();
@@ -53,10 +56,6 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
                 return gtk::glib::Propagation::Proceed;
             }
             use gtk::gdk::Key;
-            if key == Key::space && stack_w.visible_child_name().as_deref() == Some("shorts") {
-                shorts_k.toggle_pause();
-                return gtk::glib::Propagation::Stop;
-            }
             // `/` focuses search from anywhere. A fullscreen player drops to the corner PiP first
             // so it does not cover the results. The focus grab is deferred to idle so this
             // keystroke does not reach the search entry.
@@ -78,12 +77,14 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
             // if still held after 180 ms, engage 2× without pausing. `space_down` guards against
             // key auto-repeat.
             if key == Key::space {
-                if player_mode.get() == PlayerMode::Hidden {
+                let on_shorts = stack_w.visible_child_name().as_deref() == Some("shorts");
+                if !on_shorts && player_mode.get() == PlayerMode::Hidden {
                     return gtk::glib::Propagation::Proceed;
                 }
                 if space_down.replace(true) {
                     return gtk::glib::Propagation::Stop; // auto-repeat
                 }
+                space_on_shorts.set(on_shorts);
                 let g = space_gen.get().wrapping_add(1);
                 space_gen.set(g);
                 let engine = engine.clone();
@@ -92,8 +93,15 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
                 let space_saved_speed = space_saved_speed.clone();
                 let space_gen = space_gen.clone();
                 let player_k = player_k.clone();
+                let shorts_k = shorts_k.clone();
                 gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(180), move || {
-                    if space_down.get() && space_gen.get() == g {
+                    if !(space_down.get() && space_gen.get() == g) {
+                        return;
+                    }
+                    if on_shorts {
+                        shorts_k.hold_2x(true);
+                        space_2x.set(true);
+                    } else {
                         space_saved_speed.set(engine.speed());
                         engine.set_speed(2.0);
                         // Holding while paused resumes at 2×; release restores the speed and
@@ -129,12 +137,20 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
     {
         let engine = engine.clone();
         let player_k = player.clone();
+        let shorts_k = shorts_view.clone();
         keys.connect_key_released(move |_, key, _, _| {
             if key != gtk::gdk::Key::space || !space_down.replace(false) {
                 return;
             }
             space_gen.set(space_gen.get().wrapping_add(1)); // cancel a pending hold-timer
-            if space_2x.replace(false) {
+            let held = space_2x.replace(false);
+            if space_on_shorts.get() {
+                if held {
+                    shorts_k.hold_2x(false);
+                } else {
+                    shorts_k.toggle_pause();
+                }
+            } else if held {
                 engine.set_speed(space_saved_speed.get()); // was a hold → restore speed
                 player_k.set_speed_indicator(false);
             } else {

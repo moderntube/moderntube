@@ -20,6 +20,7 @@ use crate::sponsorblock::Segment;
 
 mod sponsor_bar;
 mod storyboard_preview;
+pub(crate) use storyboard_preview::build_scrub_preview;
 
 pub use sponsor_bar::build_sponsorblock_toggles;
 
@@ -552,7 +553,7 @@ impl PlayerControls {
 }
 
 /// How long the seek bar must rest before a drag's value is sought.
-const SEEK_SETTLE_MS: u64 = 150;
+pub(crate) const SEEK_SETTLE_MS: u64 = 150;
 
 const LIVE_AT_HEAD: &str = "<span foreground='#ff4e45'>●</span> LIVE";
 const LIVE_BEHIND: &str = "<span foreground='#9a9a9a'>●</span> LIVE";

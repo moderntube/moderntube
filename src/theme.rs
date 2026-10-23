@@ -146,9 +146,12 @@ const SHORTS_CSS: &str = "
 .shorts-ctl { background-color: alpha(black,0.45); color: #fff; min-width: 44px; min-height: 44px; padding: 0; border-radius: 999px; border: none; box-shadow: none; transition: background-color 120ms ease-out; }
 .shorts-ctl:hover { background-color: alpha(black,0.65); }
 .shorts-center-icon { background-color: alpha(black,0.55); color: #fff; padding: 22px; border-radius: 999px; }
-.shorts-progress { min-height: 3px; }
-.shorts-progress trough { min-height: 3px; background-color: alpha(white,0.25); border-radius: 0; }
-.shorts-progress progress { min-height: 3px; background-color: @accent_color; border-radius: 0; }
+.shorts-seek { padding: 8px 0 0 0; margin: 0; }
+.shorts-seek trough { min-height: 3px; background-color: alpha(white,0.25); border-radius: 0; transition: min-height 120ms ease-out; }
+.shorts-seek:hover trough { min-height: 5px; }
+.shorts-seek highlight { background-color: @accent_color; border-radius: 0; }
+.shorts-seek slider { min-width: 0; min-height: 0; margin: 0; background: @accent_color; border: none; box-shadow: none; transition: all 120ms ease-out; }
+.shorts-seek:hover slider { min-width: 12px; min-height: 12px; margin: -4px; border-radius: 999px; }
 .shorts-round { min-width: 48px; min-height: 48px; padding: 0; border-radius: 999px; background-color: alpha(currentColor,0.10); border: none; box-shadow: none; transition: background-color 120ms ease-out, color 120ms ease-out; }
 .shorts-round:hover { background-color: alpha(currentColor,0.18); }
 .shorts-round:checked { background-color: alpha(currentColor,0.18); }

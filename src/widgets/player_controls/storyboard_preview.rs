@@ -88,7 +88,7 @@ async fn fetch_bytes(url: &str) -> Option<Vec<u8>> {
 
 /// The scrub preview: a thumbnail of the hovered position and its timestamp, shown above
 /// the seek bar while the pointer is over it.
-pub(super) fn build_scrub_preview(
+pub(crate) fn build_scrub_preview(
     engine: &Rc<dyn Player>,
     rt: AsyncRuntime,
     scale: &Scale,
