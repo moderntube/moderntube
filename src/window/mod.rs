@@ -140,7 +140,14 @@ pub fn build(application: &adw::Application, rt: AsyncRuntime) -> ApplicationWin
     stack.add_named(&channel_view.root, Some("channel"));
     stack.add_named(&playlist_view.root, Some("playlist"));
     stack.add_named(player_box, Some("player"));
-    stack.add_named(&shorts_view.root, Some("shorts"));
+    let shorts_header = adw::HeaderBar::new();
+    let shorts_search = gtk::SearchEntry::builder().placeholder_text("Search YouTube").width_request(360).build();
+    shorts_header.set_title_widget(Some(&shorts_search));
+    let shorts_page = GtkBox::new(Orientation::Vertical, 0);
+    shorts_page.append(&shorts_header);
+    shorts_view.root.set_vexpand(true);
+    shorts_page.append(&shorts_view.root);
+    stack.add_named(&shorts_page, Some("shorts"));
     stack.set_visible_child_name("results");
     {
         let shorts_view = shorts_view.clone();
@@ -162,7 +169,7 @@ pub fn build(application: &adw::Application, rt: AsyncRuntime) -> ApplicationWin
     stage.set_vexpand(true);
     toasts.set_child(Some(&shell));
 
-    search::wire_search_boxes(&app, player_search);
+    search::wire_search_boxes(&app, &[player_search, &shorts_search]);
     // The nav rail's Home and Subscriptions are wired in `nav::wire_nav_rail` once the window
     // exists, so they can leave the player page.
     // The initial home load runs after the stored session resolves (`auth::wire_session`): a

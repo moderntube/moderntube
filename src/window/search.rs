@@ -324,18 +324,19 @@ impl App {
     }
 }
 
-/// Autocomplete on both search boxes and the results grid's infinite scroll.
-pub(super) fn wire_search_boxes(app: &Rc<App>, player_search: &SearchEntry) {
+/// Autocomplete on every page's search box and the results grid's infinite scroll.
+pub(super) fn wire_search_boxes(app: &Rc<App>, page_searches: &[&SearchEntry]) {
     let App { rt, session, toasts, search, search_gen, search_continuation, loading_more, feed_kind, .. } =
         &**app;
     let results = app.results();
-    // Autocomplete on the results header and player header search boxes.
     let run_search: Rc<dyn Fn(String)> = {
         let app = app.clone();
         Rc::new(move |query: String| app.run_search(query))
     };
     wire_search(search, run_search.clone(), session.clone(), rt.clone());
-    wire_search(player_search, run_search.clone(), session.clone(), rt.clone());
+    for entry in page_searches {
+        wire_search(entry, run_search.clone(), session.clone(), rt.clone());
+    }
 
     let filters = Rc::new(SearchFilters::new({
         let app = Rc::downgrade(app);
