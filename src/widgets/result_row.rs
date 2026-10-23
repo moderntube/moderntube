@@ -291,7 +291,7 @@ impl ResultRow {
             }
             on_leave(obj.imp().key.borrow().clone());
         });
-        self.add_controller(motion);
+        self.imp().thumb_overlay.add_controller(motion);
     }
 
     pub fn bind(&self, item: &ResultItem, rt: &AsyncRuntime, cache: &ThumbCache) {
