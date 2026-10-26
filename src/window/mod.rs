@@ -18,6 +18,7 @@ mod appearance;
 mod auth;
 mod catchup;
 mod chat;
+mod feedback;
 mod hooks;
 mod live;
 mod media_keys;
@@ -195,6 +196,7 @@ pub fn build(application: &adw::Application, rt: AsyncRuntime) -> ApplicationWin
     chat::wire_chat_send(&app);
     quality::wire_quality(&app);
     shortcuts::wire_shortcuts(&app, &window);
+    feedback::wire_feedback(&app, &window);
     sponsor::wire_sponsorblock(&app);
     hooks::wire_startup_hooks(&app);
     media_keys::wire_mpris(&app, &window);

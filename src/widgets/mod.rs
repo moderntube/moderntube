@@ -44,6 +44,7 @@ pub mod catchup_panel;
 pub mod catchup_strip;
 pub mod channel_view;
 pub mod comments;
+pub mod feedback_dialog;
 pub mod hover_preview;
 pub mod live_chat;
 mod nav_rail;

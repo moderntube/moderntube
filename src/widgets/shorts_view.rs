@@ -689,6 +689,10 @@ impl ShortsView {
     pub fn step(&self, delta: i32) {
         self.inner.swipe(delta);
     }
+
+    pub fn current_video_id(&self) -> Option<String> {
+        self.inner.current().map(|e| e.video_id)
+    }
 }
 
 impl Inner {
