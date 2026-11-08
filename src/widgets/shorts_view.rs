@@ -105,6 +105,15 @@ fn circle_button(icon: &str, tip: &str, class: &str) -> Button {
     b
 }
 
+/// Whether the pointer of the event `c` is handling lies inside `target`.
+fn pointer_over(c: &impl IsA<gtk::EventController>, target: &impl IsA<gtk::Widget>) -> bool {
+    let Some((x, y)) = c.current_event().and_then(|e| e.position()) else { return false };
+    let Some(native) = target.native() else { return false };
+    let (sx, sy) = native.surface_transform();
+    let at = gtk::graphene::Point::new((x - sx) as f32, (y - sy) as f32);
+    native.compute_point(target, &at).is_some_and(|p| target.contains(f64::from(p.x()), f64::from(p.y())))
+}
+
 /// An action-column entry: a round button with a caption under it.
 fn action(button: &impl IsA<gtk::Widget>, caption: &Label) -> GtkBox {
     let b = GtkBox::new(Orientation::Vertical, 4);
@@ -569,6 +578,12 @@ impl ShortsView {
                     return glib::Propagation::Proceed;
                 }
                 let Some(i) = w.upgrade() else { return glib::Propagation::Proceed };
+                // A scroll over the open comments sheet belongs to the sheet, whichever route
+                // it took here.
+                if i.ui.comments_panel.reveals_child() && pointer_over(c, &i.ui.comments_panel) {
+                    i.scroll_acc.set(0.0);
+                    return glib::Propagation::Stop;
+                }
                 let acc = i.scroll_acc.get() + dy;
                 if acc.abs() >= 1.0 {
                     i.scroll_acc.set(0.0);

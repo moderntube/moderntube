@@ -250,12 +250,8 @@ pub(super) fn wire_watch_actions(app: &Rc<App>) {
         });
     }
     {
-        let wi = watch_info.clone();
         let app = app.clone();
-        watch_info.connect_channel(move || {
-            let Some(cid) = wi.channel_id() else { return };
-            app.open_channel(cid, wi.channel_name());
-        });
+        watch_info.connect_channel(move |cid, name| app.open_channel(cid, name));
     }
 }
 

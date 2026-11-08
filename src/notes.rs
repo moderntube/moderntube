@@ -4,8 +4,9 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-/// Lines of the log copied into a note.
-pub const LOG_TAIL_LINES: usize = 300;
+/// Lines of the log copied into a note: about 100 s of playback at the ~60 lines/s the
+/// pipeline logs, so a glitch the user saw before opening the dialog is still in it.
+pub const LOG_TAIL_LINES: usize = 6000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoteKind {

@@ -67,10 +67,13 @@ pub(super) fn build_player_page(app: &Rc<App>) -> PlayerPage {
     let below = GtkBox::new(Orientation::Vertical, 0);
     below.append(&watch_info.root);
     below.append(&comments.root);
+    // A click on the selectable description focuses it; the page holds still so the drag selects
+    // the text under the pointer.
+    let below_viewport = gtk::Viewport::builder().scroll_to_focus(false).child(&below).build();
     let below_scroller = ScrolledWindow::builder()
         .hscrollbar_policy(PolicyType::Never)
         .vexpand(true)
-        .child(&below)
+        .child(&below_viewport)
         .build();
     let left = GtkBox::new(Orientation::Vertical, 0);
     left.append(&video_frame);

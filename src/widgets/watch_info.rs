@@ -10,7 +10,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use gtk::{Align, Box as GtkBox, Button, Label, Orientation, Revealer, RevealerTransitionType};
 
-use innertube::VideoDetails;
+use innertube::{Collaborator, VideoDetails};
 
 use crate::runtime::AsyncRuntime;
 
@@ -21,6 +21,7 @@ const AVATAR_PX: i32 = 40;
 const COLLAPSED_LINES: i32 = 3;
 
 type ClickCb = Rc<RefCell<Option<Box<dyn Fn()>>>>;
+type ChannelCb = Rc<RefCell<Option<Box<dyn Fn(String, String)>>>>;
 type LikeCb = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 /// Abbreviate a raw count ("19,214,590", "2,071 views") to a compact form ("19M", "2K").
@@ -100,6 +101,8 @@ pub struct WatchInfo {
     /// The uploader's channel id, for the channel-click callback target. Shared with the
     /// channel-row click gesture registered in `new` (which reads it at click time).
     channel_id: Rc<RefCell<Option<String>>>,
+    /// A collab video's channels; a click on the channel row lists them to pick from.
+    collaborators: Rc<RefCell<Vec<Collaborator>>>,
     /// The video currently bound. Guards the async avatar fetch against a fast video switch
     /// landing a stale image (as `ResultRow`'s `key` does).
     video_id: Rc<RefCell<String>>,
@@ -109,7 +112,7 @@ pub struct WatchInfo {
     on_dislike: LikeCb,
     on_share: ClickCb,
     on_save: ClickCb,
-    on_channel: ClickCb,
+    on_channel: ChannelCb,
 }
 
 impl WatchInfo {
@@ -204,6 +207,7 @@ impl WatchInfo {
             .lines(COLLAPSED_LINES)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .css_classes(["dim-label"])
+            .selectable(true)
             .build();
         let description_toggle = Button::with_label("…more");
         description_toggle.add_css_class("flat");
@@ -242,6 +246,7 @@ impl WatchInfo {
             description_toggle: description_toggle.clone(),
             description_expanded: Rc::new(Cell::new(false)),
             channel_id: Rc::new(RefCell::new(None)),
+            collaborators: Rc::new(RefCell::new(Vec::new())),
             video_id: Rc::new(RefCell::new(String::new())),
             on_subscribe: Rc::new(RefCell::new(None)),
             on_like: Rc::new(RefCell::new(None)),
@@ -324,15 +329,27 @@ impl WatchInfo {
             }
         });
 
+        let collab_popover = gtk::Popover::new();
+        collab_popover.add_css_class("menu");
+        collab_popover.set_parent(&this.channel_click_area);
+        collab_popover.set_position(gtk::PositionType::Bottom);
         let gesture = gtk::GestureClick::new();
         gesture.connect_pressed({
             let channel_id = this.channel_id.clone();
+            let channel_name = this.channel_name.clone();
+            let collaborators = this.collaborators.clone();
             let cb = this.on_channel.clone();
+            let rt = this.rt.clone();
             move |g, _, _, _| {
-                if channel_id.borrow().is_some() {
+                let collab = collaborators.borrow();
+                if collab.len() > 1 {
+                    g.set_state(gtk::EventSequenceState::Claimed);
+                    collab_popover.set_child(Some(&collaborator_list(&rt, &collab, &collab_popover, &cb)));
+                    collab_popover.popup();
+                } else if let Some(id) = channel_id.borrow().clone() {
                     g.set_state(gtk::EventSequenceState::Claimed);
                     if let Some(f) = cb.borrow().as_ref() {
-                        f();
+                        f(id, channel_name.text().to_string());
                     }
                 }
             }
@@ -357,6 +374,7 @@ impl WatchInfo {
     pub fn set_details(&self, d: &VideoDetails, video_id: &str) {
         *self.video_id.borrow_mut() = video_id.to_string();
         *self.channel_id.borrow_mut() = d.channel_id.clone();
+        *self.collaborators.borrow_mut() = d.collaborators.clone();
         self.channel_click_area
             .set_cursor_from_name(d.channel_id.as_deref().map(|_| "pointer"));
 
@@ -471,6 +489,7 @@ impl WatchInfo {
     pub fn clear(&self) {
         *self.video_id.borrow_mut() = String::new();
         *self.channel_id.borrow_mut() = None;
+        self.collaborators.borrow_mut().clear();
         self.channel_click_area.set_cursor_from_name(None);
 
         self.title.set_text("");
@@ -532,9 +551,52 @@ impl WatchInfo {
         *self.on_save.borrow_mut() = Some(Box::new(f));
     }
 
-    pub fn connect_channel<F: Fn() + 'static>(&self, f: F) {
+    /// `f(channel_id, name)` runs when the user picks the uploader, or one channel of a collab.
+    pub fn connect_channel<F: Fn(String, String) + 'static>(&self, f: F) {
         *self.on_channel.borrow_mut() = Some(Box::new(f));
     }
+}
+
+/// The "Collaborators" list YouTube shows for a collab video: one row per channel.
+fn collaborator_list(rt: &AsyncRuntime, collab: &[Collaborator], popover: &gtk::Popover, cb: &ChannelCb) -> GtkBox {
+    let list = GtkBox::new(Orientation::Vertical, 2);
+    let heading = Label::builder().label("Collaborators").xalign(0.0).css_classes(["heading"]).build();
+    heading.set_margin_start(8);
+    heading.set_margin_top(4);
+    heading.set_margin_bottom(4);
+    list.append(&heading);
+    for c in collab {
+        let avatar = adw::Avatar::new(36, Some(&c.name), true);
+        if let Some(url) = c.avatar.clone() {
+            let avatar = avatar.clone();
+            rt.spawn(async move { fetch_bytes(url).await }, move |bytes: Option<Vec<u8>>| {
+                let Some(bytes) = bytes else { return };
+                if let Ok(t) = gtk::gdk::Texture::from_bytes(&gtk::glib::Bytes::from_owned(bytes)) {
+                    avatar.set_custom_image(Some(&t));
+                }
+            });
+        }
+        let name = Label::builder().label(&c.name).xalign(0.0).css_classes(["heading"]).build();
+        let text = GtkBox::new(Orientation::Vertical, 2);
+        text.set_valign(Align::Center);
+        text.append(&name);
+        if let Some(sub) = &c.subtitle {
+            text.append(&Label::builder().label(sub).xalign(0.0).css_classes(["dim-label", "caption"]).build());
+        }
+        let row = GtkBox::new(Orientation::Horizontal, 10);
+        row.append(&avatar);
+        row.append(&text);
+        let button = Button::builder().child(&row).css_classes(["flat"]).build();
+        let (id, title, popover, cb) = (c.channel_id.clone(), c.name.clone(), popover.clone(), cb.clone());
+        button.connect_clicked(move |_| {
+            popover.popdown();
+            if let Some(f) = cb.borrow().as_ref() {
+                f(id.clone(), title.clone());
+            }
+        });
+        list.append(&button);
+    }
+    list
 }
 
 /// Update the Like button's label + highlight for `on`, keeping the "no count yet"
