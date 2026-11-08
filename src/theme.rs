@@ -80,6 +80,8 @@ pub fn build_css(accent: &str, oled: bool) -> String {
          .miniplayer { border-radius: 12px; border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 8px 28px rgba(0,0,0,0.55); background-color: #000; } \
          .mini-ctl { background-color: rgba(0,0,0,0.62); color: #fff; min-width: 30px; min-height: 30px; padding: 4px; border-radius: 999px; } \
          .mini-ctl:hover { background-color: rgba(70,70,70,0.92); } \
+         .note-editor textview, .note-editor textview text { background-color: transparent; } \
+         .note-thumb { border-radius: 6px; box-shadow: 0 0 0 1px alpha(@window_fg_color, 0.18); } \
          .queue-count { font-size: 0.72em; font-weight: bold; padding-right: 2px; } \
          .search-filter { padding: 4px 8px; font-weight: normal; } \
          .search-filter.selected { font-weight: bold; color: @accent_color; } \

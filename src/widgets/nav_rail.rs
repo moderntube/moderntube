@@ -78,6 +78,15 @@ impl NavRail {
         spacer.set_vexpand(true);
         root.append(&spacer);
 
+        let note = Button::builder()
+            .icon_name("document-edit-symbolic")
+            .tooltip_text("Leave a note (Ctrl+Shift+F)")
+            .action_name("win.leave-note")
+            .build();
+        note.add_css_class("flat");
+        note.set_halign(Align::Start);
+        root.append(&note);
+
         let settings = MenuButton::builder()
             .icon_name("emblem-system-symbolic")
             .tooltip_text("Settings")

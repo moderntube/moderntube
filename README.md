@@ -38,7 +38,7 @@ web client. Bug reports are welcome.
 ## Build
 
 You need Rust 1.95 or later, a C compiler, and the development files for GTK 4.16 or
-later, libadwaita 1.4 or later, GStreamer 1.18 or later (core and base plugins) and
+later, libadwaita 1.5 or later, GStreamer 1.18 or later (core and base plugins) and
 WebKitGTK 6.0. At runtime you also need these GStreamer plugins:
 
 - base: `appsrc`, `appsink`, `parsebin`, `decodebin3`, `audioconvert`, `audioresample`

@@ -13,7 +13,7 @@ publish = false
 
 [dependencies]
 gtk4 = { version = "0.11", features = ["v4_16"] }
-adw = { package = "libadwaita", version = "0.9", features = ["v1_4"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_5"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 async-channel = "2"
 thiserror = "2"

@@ -445,6 +445,11 @@ impl WatchInfo {
         self.video_id.borrow().clone()
     }
 
+    /// The title shown, empty before `set_details` and after `clear()`.
+    pub fn title(&self) -> String {
+        self.title.text().to_string()
+    }
+
     /// The uploader's channel id bound by the last `set_details` call, if known.
     pub fn channel_id(&self) -> Option<String> {
         self.channel_id.borrow().clone()

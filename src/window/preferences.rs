@@ -25,6 +25,10 @@ pub(super) fn wire_preferences(application: &adw::Application, parent: &adw::App
 pub(super) fn primary_menu() -> gtk::MenuButton {
     let menu = gio::Menu::new();
     menu.append(Some("Preferences"), Some("app.preferences"));
+    let notes = gio::Menu::new();
+    notes.append(Some("Leave a Note…"), Some("win.leave-note"));
+    notes.append(Some("Open Notes Folder"), Some("win.open-notes"));
+    menu.append_section(None, &notes);
     gtk::MenuButton::builder().icon_name("open-menu-symbolic").tooltip_text("Main menu").menu_model(&menu).build()
 }
 

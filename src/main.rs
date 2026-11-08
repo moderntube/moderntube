@@ -5,19 +5,10 @@ use moderntube::window;
 
 const DEFAULT_FILTER: &str = "info,innertube=debug,innertube_pot=debug,innertube_js=debug,innertube_sabr=debug";
 
-/// `$XDG_STATE_HOME/moderntube/moderntube.log`, or under `~/.local/state`.
-fn log_path() -> Option<std::path::PathBuf> {
-    let base = std::env::var_os("XDG_STATE_HOME")
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/state")))?;
-    Some(base.join("moderntube").join("moderntube.log"))
-}
-
 /// The log file, truncated, readable by the owner only.
 fn open_log() -> Option<std::fs::File> {
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-    let path = log_path()?;
+    let path = moderntube::log_path()?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(path.parent()?).ok()?;
     let f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(&path).ok()?;
     // `mode` applies only when the file is created.
@@ -25,7 +16,7 @@ fn open_log() -> Option<std::fs::File> {
     Some(f)
 }
 
-/// Bare messages to stderr, and to [`log_path`] when stderr is not a terminal.
+/// Bare messages to stderr, and to [`moderntube::log_path`] when stderr is not a terminal.
 /// `RUST_LOG` replaces [`DEFAULT_FILTER`].
 fn setup_logging() {
     use std::io::IsTerminal;
