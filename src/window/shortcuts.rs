@@ -54,9 +54,11 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
         let app_k = app.clone();
         let app_e = app.clone();
         let shorts_k = shorts_view.clone();
-        keys.connect_key_pressed(move |_, key, _, _| {
-            // Don't steal keys while a text field is focused (chat compose, search).
-            if typing() {
+        keys.connect_key_pressed(move |_, key, _, mods| {
+            // Don't steal keys while a text field is focused (chat compose, search). A Ctrl or
+            // Alt chord (Ctrl+C on selected text) belongs to the focused widget.
+            let chord = mods.intersects(gtk::gdk::ModifierType::CONTROL_MASK | gtk::gdk::ModifierType::ALT_MASK);
+            if typing() || chord {
                 return gtk::glib::Propagation::Proceed;
             }
             use gtk::gdk::Key;

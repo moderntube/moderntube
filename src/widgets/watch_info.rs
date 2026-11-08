@@ -207,6 +207,7 @@ impl WatchInfo {
             .lines(COLLAPSED_LINES)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .css_classes(["dim-label"])
+            .selectable(true)
             .build();
         let description_toggle = Button::with_label("…more");
         description_toggle.add_css_class("flat");
