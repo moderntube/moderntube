@@ -25,6 +25,9 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
     let space_gen = Rc::new(Cell::new(0u64));
     // The press went to the Shorts player, so the release does too.
     let space_on_shorts = Rc::new(Cell::new(false));
+    // Auto-repeat arrives as a release and press queued together, so a release acts from an idle
+    // callback and a press that lands before it marks the pair as a repeat.
+    let space_release_pending = Rc::new(Cell::new(false));
     let typing_in_field: Rc<dyn Fn() -> bool> = {
         let window_f = window.clone();
         Rc::new(move || {
@@ -44,6 +47,7 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
         let space_saved_speed = space_saved_speed.clone();
         let space_gen = space_gen.clone();
         let space_on_shorts = space_on_shorts.clone();
+        let space_release_pending = space_release_pending.clone();
         let typing = typing_in_field.clone();
         let search_key = search.clone();
         let player_k = player.clone();
@@ -80,6 +84,10 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
                 let on_shorts = stack_w.visible_child_name().as_deref() == Some("shorts");
                 if !on_shorts && player_mode.get() == PlayerMode::Hidden {
                     return gtk::glib::Propagation::Proceed;
+                }
+                if space_release_pending.replace(false) {
+                    space_down.set(true);
+                    return gtk::glib::Propagation::Stop; // auto-repeat: release and press pair
                 }
                 if space_down.replace(true) {
                     return gtk::glib::Propagation::Stop; // auto-repeat
@@ -142,20 +150,32 @@ pub(super) fn wire_shortcuts(app: &Rc<App>, window: &ApplicationWindow) {
             if key != gtk::gdk::Key::space || !space_down.replace(false) {
                 return;
             }
-            space_gen.set(space_gen.get().wrapping_add(1)); // cancel a pending hold-timer
-            let held = space_2x.replace(false);
-            if space_on_shorts.get() {
-                if held {
-                    shorts_k.hold_2x(false);
-                } else {
-                    shorts_k.toggle_pause();
+            space_release_pending.set(true);
+            let (engine, player_k, shorts_k) = (engine.clone(), player_k.clone(), shorts_k.clone());
+            let (pending, space_down, space_gen) =
+                (space_release_pending.clone(), space_down.clone(), space_gen.clone());
+            let (space_2x, space_on_shorts, space_saved_speed) =
+                (space_2x.clone(), space_on_shorts.clone(), space_saved_speed.clone());
+            gtk::glib::idle_add_local_once(move || {
+                // A press queued behind this release cleared the flag: the key is still held.
+                if !pending.replace(false) || space_down.get() {
+                    return;
                 }
-            } else if held {
-                engine.set_speed(space_saved_speed.get()); // was a hold → restore speed
-                player_k.set_speed_indicator(false);
-            } else {
-                engine.toggle_pause(); // was a tap → pause/resume
-            }
+                space_gen.set(space_gen.get().wrapping_add(1)); // cancel a pending hold-timer
+                let held = space_2x.replace(false);
+                if space_on_shorts.get() {
+                    if held {
+                        shorts_k.hold_2x(false);
+                    } else {
+                        shorts_k.toggle_pause();
+                    }
+                } else if held {
+                    engine.set_speed(space_saved_speed.get()); // was a hold → restore speed
+                    player_k.set_speed_indicator(false);
+                } else {
+                    engine.toggle_pause(); // was a tap → pause/resume
+                }
+            });
         });
     }
     window.add_controller(keys);
